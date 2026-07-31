@@ -1,9 +1,14 @@
 from dataclasses import dataclass
 from pathlib import Path
+import secrets
 
+from board_renderer import render_board_png
 from database import DATABASE_PATH, Game, get_game
 from email_parser import parse_email_body
 from game_service import submit_move
+
+
+DEFAULT_ATTACHMENT_DIRECTORY = Path("output/boards")
 
 
 @dataclass(frozen=True)
@@ -13,6 +18,8 @@ class EmailResponse:
     body: str
     delivered_to_opponent: bool
     move: str | None
+    attachment_path: Path | None
+    delay_hours: int | None
 
 
 def get_opponent(game: Game, sender_email: str) -> str:
@@ -26,6 +33,19 @@ def get_opponent(game: Game, sender_email: str) -> str:
         return game.white_email
 
     raise ValueError("The sender is not a player in this game.")
+
+
+def get_player_color(game: Game, player_email: str) -> str:
+    """Return the chess color assigned to an email address."""
+    player_email = player_email.strip().lower()
+
+    if player_email == game.white_email:
+        return "white"
+
+    if player_email == game.black_email:
+        return "black"
+
+    raise ValueError("The email address is not a player in this game.")
 
 
 def error_response(
@@ -46,6 +66,28 @@ def error_response(
         ),
         delivered_to_opponent=False,
         move=None,
+        attachment_path=None,
+        delay_hours=None,
+    )
+
+
+def create_board_attachment(
+    game: Game,
+    recipient_email: str,
+    attachment_directory: Path,
+) -> Path:
+    """Render the current position from the recipient's perspective."""
+    orientation = get_player_color(game, recipient_email)
+    unique_suffix = secrets.token_hex(4)
+
+    attachment_path = attachment_directory / (
+        f"{game.code}-{unique_suffix}.png"
+    )
+
+    return render_board_png(
+        fen=game.fen,
+        output_path=attachment_path,
+        orientation=orientation,
     )
 
 
@@ -54,6 +96,7 @@ def process_game_email(
     sender_email: str,
     email_body: str,
     db_path: Path = DATABASE_PATH,
+    attachment_directory: Path = DEFAULT_ATTACHMENT_DIRECTORY,
 ) -> EmailResponse:
     """Process one email sent to an existing Chesspost game."""
     sender_email = sender_email.strip().lower()
@@ -109,14 +152,31 @@ def process_game_email(
     opponent = get_opponent(submission.game, sender_email)
     short_code = game_code[:8].upper()
 
+    attachment_path = create_board_attachment(
+        game=submission.game,
+        recipient_email=opponent,
+        attachment_directory=attachment_directory,
+    )
+
+    if parsed_email.delay_hours is None:
+        delivery_text = "This message should be delivered immediately."
+    else:
+        delivery_text = (
+            f"This message should be delivered after "
+            f"{parsed_email.delay_hours} hours."
+        )
+
     return EmailResponse(
         recipient=opponent,
         subject=f"[Chesspost {short_code}] {submission.move}",
         body=(
             f"{sender_email} played {submission.move}.\n\n"
             "It is now your turn.\n\n"
-            "Reply to this email with your move on the first line."
+            "Reply to this email with your move on the first line.\n\n"
+            f"{delivery_text}"
         ),
         delivered_to_opponent=True,
         move=submission.move,
+        attachment_path=attachment_path,
+        delay_hours=parsed_email.delay_hours,
     )
