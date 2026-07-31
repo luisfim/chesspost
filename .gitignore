@@ -1,0 +1,5 @@
+
+# Chesspost local database
+*.db
+*.db-shm
+*.db-wal
