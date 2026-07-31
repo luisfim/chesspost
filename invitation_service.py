@@ -1,11 +1,15 @@
 from dataclasses import dataclass
+import os
 from pathlib import Path
 
 from database import DATABASE_PATH, Game, create_invited_game
 from new_game_parser import parse_new_game_email
 
 
-GAME_EMAIL_DOMAIN = "chesspost.test"
+GAME_EMAIL_DOMAIN = os.getenv(
+    "CHESSPOST_EMAIL_DOMAIN",
+    "chesspost.test",
+).strip().lower()
 
 
 @dataclass(frozen=True)

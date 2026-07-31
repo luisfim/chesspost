@@ -6,3 +6,8 @@
 
 # Generated board images
 output/
+
+# Environment secrets
+.env
+.env.*
+!.env.example
