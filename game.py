@@ -1,27 +1,30 @@
 import chess
 
+from chess_engine import apply_move, new_game_fen
 
-def show_board(board: chess.Board) -> None:
-    """Display the current board and whose turn it is."""
+
+def show_board(fen: str) -> None:
+    board = chess.Board(fen)
+
     print()
     print(board)
     print()
 
     turn = "White" if board.turn == chess.WHITE else "Black"
     print(f"Turn: {turn}")
-    print(f"FEN: {board.fen()}")
+    print(f"FEN: {fen}")
     print()
 
 
 def main() -> None:
-    board = chess.Board()
+    fen = new_game_fen()
 
     print("Chesspost — Local Chess Test")
-    print("Enter moves using standard notation, such as e4, Nf3, or O-O.")
+    print("Enter moves such as e4, Nf3, Bxc6, or O-O.")
     print("Type 'quit' to stop.")
 
-    while not board.is_game_over():
-        show_board(board)
+    while True:
+        show_board(fen)
 
         move_text = input("Move: ").strip()
 
@@ -29,15 +32,18 @@ def main() -> None:
             print("Game stopped.")
             return
 
-        try:
-            move = board.parse_san(move_text)
-            board.push(move)
-            print(f"Accepted move: {move_text}")
-        except ValueError:
-            print(f"Illegal or unrecognized move: {move_text}")
+        result = apply_move(fen, move_text)
+        print(result.message)
 
-    show_board(board)
-    print(f"Game over: {board.outcome()}")
+        if not result.accepted:
+            continue
+
+        fen = result.fen
+
+        if result.game_over:
+            show_board(fen)
+            print(f"Game over. Result: {result.result}")
+            return
 
 
 if __name__ == "__main__":
