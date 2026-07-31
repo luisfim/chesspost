@@ -18,8 +18,11 @@ class Game:
     fen: str
     status: str
     result: str | None
+    invited_by_email: str | None
+    delivery_delay_hours: int
     created_at: str
     updated_at: str
+    accepted_at: str | None
 
 
 def connect(db_path: Path = DATABASE_PATH) -> sqlite3.Connection:
@@ -31,7 +34,7 @@ def connect(db_path: Path = DATABASE_PATH) -> sqlite3.Connection:
 
 
 def init_database(db_path: Path = DATABASE_PATH) -> None:
-    """Create the database tables if they do not exist."""
+    """Create and update the Chesspost database tables."""
     db_path.parent.mkdir(parents=True, exist_ok=True)
 
     with connect(db_path) as connection:
@@ -44,8 +47,11 @@ def init_database(db_path: Path = DATABASE_PATH) -> None:
                 fen TEXT NOT NULL,
                 status TEXT NOT NULL DEFAULT 'active',
                 result TEXT,
+                invited_by_email TEXT,
+                delivery_delay_hours INTEGER NOT NULL DEFAULT 0,
                 created_at TEXT NOT NULL,
-                updated_at TEXT NOT NULL
+                updated_at TEXT NOT NULL,
+                accepted_at TEXT
             );
 
             CREATE TABLE IF NOT EXISTS moves (
@@ -62,25 +68,65 @@ def init_database(db_path: Path = DATABASE_PATH) -> None:
             """
         )
 
+        # Update databases created during earlier development steps.
+        existing_columns = {
+            row["name"]
+            for row in connection.execute(
+                "PRAGMA table_info(games)"
+            ).fetchall()
+        }
 
-def create_game(
-    white_email: str,
-    black_email: str,
-    db_path: Path = DATABASE_PATH,
-) -> Game:
-    """Create and save a new chess game."""
-    white_email = white_email.strip().lower()
-    black_email = black_email.strip().lower()
+        if "invited_by_email" not in existing_columns:
+            connection.execute(
+                "ALTER TABLE games ADD COLUMN invited_by_email TEXT"
+            )
 
-    if not white_email or not black_email:
+        if "delivery_delay_hours" not in existing_columns:
+            connection.execute(
+                """
+                ALTER TABLE games
+                ADD COLUMN delivery_delay_hours INTEGER NOT NULL DEFAULT 0
+                """
+            )
+
+        if "accepted_at" not in existing_columns:
+            connection.execute(
+                "ALTER TABLE games ADD COLUMN accepted_at TEXT"
+            )
+
+
+def validate_players(
+    first_email: str,
+    second_email: str,
+) -> tuple[str, str]:
+    """Normalize and validate two player email addresses."""
+    first_email = first_email.strip().lower()
+    second_email = second_email.strip().lower()
+
+    if not first_email or not second_email:
         raise ValueError("Both players must have an email address.")
 
-    if white_email == black_email:
-        raise ValueError("A player cannot play against the same email address.")
+    if first_email == second_email:
+        raise ValueError(
+            "A player cannot play against the same email address."
+        )
 
+    return first_email, second_email
+
+
+def insert_game(
+    *,
+    code: str,
+    white_email: str,
+    black_email: str,
+    status: str,
+    invited_by_email: str | None,
+    delivery_delay_hours: int,
+    accepted_at: str | None,
+    db_path: Path,
+) -> Game:
+    """Insert a game into the database."""
     init_database(db_path)
-
-    code = secrets.token_hex(8)
     now = datetime.now(timezone.utc).isoformat()
 
     with connect(db_path) as connection:
@@ -93,20 +139,26 @@ def create_game(
                 fen,
                 status,
                 result,
+                invited_by_email,
+                delivery_delay_hours,
                 created_at,
-                updated_at
+                updated_at,
+                accepted_at
             )
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
             """,
             (
                 code,
                 white_email,
                 black_email,
                 new_game_fen(),
-                "active",
+                status,
                 None,
+                invited_by_email,
+                delivery_delay_hours,
                 now,
                 now,
+                accepted_at,
             ),
         )
 
@@ -116,6 +168,83 @@ def create_game(
         raise RuntimeError("The game could not be created.")
 
     return game
+
+
+def create_game(
+    white_email: str,
+    black_email: str,
+    db_path: Path = DATABASE_PATH,
+    *,
+    delivery_delay_hours: int = 0,
+) -> Game:
+    """Create an immediately active chess game."""
+    white_email, black_email = validate_players(
+        white_email,
+        black_email,
+    )
+
+    if delivery_delay_hours < 0 or delivery_delay_hours > 720:
+        raise ValueError("Delivery delay must be between 0 and 720 hours.")
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    return insert_game(
+        code=secrets.token_hex(8),
+        white_email=white_email,
+        black_email=black_email,
+        status="active",
+        invited_by_email=None,
+        delivery_delay_hours=delivery_delay_hours,
+        accepted_at=now,
+        db_path=db_path,
+    )
+
+
+def create_invited_game(
+    inviter_email: str,
+    opponent_email: str,
+    requested_color: str,
+    delivery_delay_hours: int,
+    db_path: Path = DATABASE_PATH,
+) -> Game:
+    """Create a game that is waiting for the opponent's acceptance."""
+    inviter_email, opponent_email = validate_players(
+        inviter_email,
+        opponent_email,
+    )
+
+    requested_color = requested_color.strip().lower()
+
+    if requested_color not in {"white", "black", "random"}:
+        raise ValueError(
+            'Requested color must be "white", "black", or "random".'
+        )
+
+    if delivery_delay_hours < 0 or delivery_delay_hours > 720:
+        raise ValueError("Delivery delay must be between 0 and 720 hours.")
+
+    assigned_color = requested_color
+
+    if assigned_color == "random":
+        assigned_color = secrets.choice(["white", "black"])
+
+    if assigned_color == "white":
+        white_email = inviter_email
+        black_email = opponent_email
+    else:
+        white_email = opponent_email
+        black_email = inviter_email
+
+    return insert_game(
+        code=secrets.token_hex(8),
+        white_email=white_email,
+        black_email=black_email,
+        status="invited",
+        invited_by_email=inviter_email,
+        delivery_delay_hours=delivery_delay_hours,
+        accepted_at=None,
+        db_path=db_path,
+    )
 
 
 def get_game(
@@ -135,8 +264,11 @@ def get_game(
                 fen,
                 status,
                 result,
+                invited_by_email,
+                delivery_delay_hours,
                 created_at,
-                updated_at
+                updated_at,
+                accepted_at
             FROM games
             WHERE code = ?
             """,
@@ -153,6 +285,9 @@ def get_game(
         fen=row["fen"],
         status=row["status"],
         result=row["result"],
+        invited_by_email=row["invited_by_email"],
+        delivery_delay_hours=row["delivery_delay_hours"],
         created_at=row["created_at"],
         updated_at=row["updated_at"],
+        accepted_at=row["accepted_at"],
     )
