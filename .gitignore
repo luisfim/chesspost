@@ -3,3 +3,6 @@
 *.db
 *.db-shm
 *.db-wal
+
+# Generated board images
+output/
