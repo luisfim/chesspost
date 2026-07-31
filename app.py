@@ -4,6 +4,8 @@ from pathlib import Path
 from fastapi import FastAPI
 from pydantic import BaseModel, Field
 
+from outbound_mailer import dispatch_outgoing_emails
+
 from email_gateway import process_incoming_email
 
 
@@ -69,6 +71,7 @@ def inbound_email(
         db_path=database_path(),
         attachment_directory=attachment_directory(),
     )
+    deliveries = dispatch_outgoing_emails(result.emails)
 
     return {
         "route": result.route,
@@ -88,5 +91,14 @@ def inbound_email(
                 "delay_hours": outgoing.delay_hours,
             }
             for outgoing in result.emails
+        ],
+         "deliveries": [
+            {
+                "recipient": delivery.recipient,
+                "mode": delivery.mode,
+                "provider_id": delivery.provider_id,
+                "scheduled": delivery.scheduled,
+            }
+            for delivery in deliveries
         ],
     }
