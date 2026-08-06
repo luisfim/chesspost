@@ -125,6 +125,55 @@ def extract_provider_id(response: object) -> str | None:
     return str(response_id)
 
 
+def parse_real_recipients(
+    value: str | None,
+) -> set[str]:
+    """Parse the addresses allowed to receive real test emails."""
+    if not value:
+        return set()
+
+    return {
+        address.strip().lower()
+        for address in value.split(",")
+        if address.strip()
+    }
+
+
+def send_with_resend(
+    email: OutgoingEmail,
+) -> DeliveryResult:
+    """Send one email through Resend."""
+    api_key = os.getenv("RESEND_API_KEY")
+
+    if not api_key:
+        raise RuntimeError(
+            "RESEND_API_KEY is required in Resend mode."
+        )
+
+    sender_address = os.getenv("CHESSPOST_FROM_EMAIL")
+
+    if not sender_address:
+        raise RuntimeError(
+            "CHESSPOST_FROM_EMAIL is required in Resend mode."
+        )
+
+    resend.api_key = api_key
+
+    params = build_resend_params(
+        email=email,
+        sender_address=sender_address,
+    )
+
+    response = resend.Emails.send(params)
+
+    return DeliveryResult(
+        recipient=email.recipient,
+        mode="resend",
+        provider_id=extract_provider_id(response),
+        scheduled=email.delay_hours > 0,
+    )
+
+
 def print_console_email(email: OutgoingEmail) -> None:
     """Print an outgoing email without sending it."""
     print()
@@ -144,7 +193,7 @@ def send_outgoing_email(
     email: OutgoingEmail,
     mode: str | None = None,
 ) -> DeliveryResult:
-    """Send one Chesspost email or print it in console mode."""
+    """Send, simulate, or selectively deliver one email."""
     selected_mode = (
         mode
         or os.getenv("CHESSPOST_EMAIL_MODE", "console")
@@ -160,41 +209,30 @@ def send_outgoing_email(
             scheduled=email.delay_hours > 0,
         )
 
-    if selected_mode != "resend":
-        raise ValueError(
-            'CHESSPOST_EMAIL_MODE must be "console" or "resend".'
+    if selected_mode == "hybrid":
+        allowed_recipients = parse_real_recipients(
+            os.getenv("CHESSPOST_REAL_RECIPIENTS")
         )
 
-    api_key = os.getenv("RESEND_API_KEY")
+        if email.recipient.strip().lower() not in allowed_recipients:
+            print_console_email(email)
 
-    if not api_key:
-        raise RuntimeError(
-            "RESEND_API_KEY is required in resend mode."
-        )
+            return DeliveryResult(
+                recipient=email.recipient,
+                mode="console",
+                provider_id=None,
+                scheduled=email.delay_hours > 0,
+            )
 
-    sender_address = os.getenv("CHESSPOST_FROM_EMAIL")
+        return send_with_resend(email)
 
-    if not sender_address:
-        raise RuntimeError(
-            "CHESSPOST_FROM_EMAIL is required in resend mode."
-        )
+    if selected_mode == "resend":
+        return send_with_resend(email)
 
-    resend.api_key = api_key
-
-    params = build_resend_params(
-        email=email,
-        sender_address=sender_address,
+    raise ValueError(
+        "CHESSPOST_EMAIL_MODE must be "
+        '"console", "hybrid", or "resend".'
     )
-
-    response = resend.Emails.send(params)
-
-    return DeliveryResult(
-        recipient=email.recipient,
-        mode="resend",
-        provider_id=extract_provider_id(response),
-        scheduled=email.delay_hours > 0,
-    )
-
 
 def dispatch_outgoing_emails(
     emails: tuple[OutgoingEmail, ...],

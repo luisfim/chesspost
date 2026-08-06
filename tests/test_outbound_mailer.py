@@ -181,3 +181,87 @@ def test_resend_params_include_thread_headers() -> None:
             "<friend-move@example.com>"
         ),
     }
+
+
+def test_hybrid_mode_sends_allowed_recipient(
+    monkeypatch,
+) -> None:
+    email = create_email()
+    captured: dict[str, object] = {}
+
+    def fake_send(params):
+        captured.update(params)
+        return {"id": "email-hybrid-123"}
+
+    monkeypatch.setenv(
+        "RESEND_API_KEY",
+        "re_test_key",
+    )
+    monkeypatch.setenv(
+        "CHESSPOST_FROM_EMAIL",
+        "Chesspost <play@example.com>",
+    )
+    monkeypatch.setenv(
+        "CHESSPOST_REAL_RECIPIENTS",
+        "friend@example.com",
+    )
+    monkeypatch.setattr(
+        resend.Emails,
+        "send",
+        fake_send,
+    )
+
+    result = send_outgoing_email(
+        email,
+        mode="hybrid",
+    )
+
+    assert result.mode == "resend"
+    assert result.provider_id == "email-hybrid-123"
+    assert captured["to"] == ["friend@example.com"]
+
+
+def test_hybrid_mode_prints_unlisted_recipient(
+    monkeypatch,
+    capsys,
+) -> None:
+    email = create_email()
+
+    def fail_if_called(params):
+        raise AssertionError(
+            "Resend should not receive this email."
+        )
+
+    monkeypatch.setenv(
+        "CHESSPOST_REAL_RECIPIENTS",
+        "another@example.com",
+    )
+    monkeypatch.setattr(
+        resend.Emails,
+        "send",
+        fail_if_called,
+    )
+
+    result = send_outgoing_email(
+        email,
+        mode="hybrid",
+    )
+
+    output = capsys.readouterr().out
+
+    assert result.mode == "console"
+    assert result.provider_id is None
+    assert "CHESSPOST OUTGOING EMAIL" in output
+
+
+def test_real_recipient_allowlist_is_normalized() -> None:
+    from outbound_mailer import parse_real_recipients
+
+    result = parse_real_recipients(
+        " LUIS@example.com, friend@example.com "
+    )
+
+    assert result == {
+        "luis@example.com",
+        "friend@example.com",
+    }
