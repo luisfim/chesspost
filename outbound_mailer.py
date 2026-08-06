@@ -95,6 +95,9 @@ def build_resend_params(
     if email.reply_address is not None:
         params["reply_to"] = email.reply_address
 
+    if email.headers:
+        params["headers"] = dict(email.headers)
+
     if email.attachment_path is not None:
         params["attachments"] = [
             create_board_attachment(email.attachment_path)

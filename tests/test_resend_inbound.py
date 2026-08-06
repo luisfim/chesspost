@@ -118,3 +118,73 @@ def test_fetch_html_only_received_email(
     )
 
     assert email.body == "accept"
+
+
+def test_fetch_received_email_thread_metadata(
+    monkeypatch,
+) -> None:
+    def fake_get(*, email_id):
+        return {
+            "id": email_id,
+            "from": "luis@example.com",
+            "to": ["play@chesspost.test"],
+            "subject": "friend@example.com",
+            "text": "color: white",
+            "html": None,
+            "message_id": "<new-game@example.com>",
+            "headers": {
+                "In-Reply-To": "<older-message@example.com>",
+                "References": (
+                    "<first-message@example.com> "
+                    "<older-message@example.com>"
+                ),
+            },
+        }
+
+    monkeypatch.setattr(
+        resend.Emails.Receiving,
+        "get",
+        fake_get,
+    )
+
+    email = fetch_received_email(
+        "email-thread-test",
+        api_key="re_test_key",
+    )
+
+    assert email.message_id == "<new-game@example.com>"
+    assert email.references == (
+        "<first-message@example.com>",
+        "<older-message@example.com>",
+    )
+
+
+def test_webhook_message_id_can_be_used_as_fallback(
+    monkeypatch,
+) -> None:
+    def fake_get(*, email_id):
+        return {
+            "id": email_id,
+            "from": "luis@example.com",
+            "to": ["play@chesspost.test"],
+            "subject": "friend@example.com",
+            "text": "",
+            "html": None,
+            "headers": {},
+        }
+
+    monkeypatch.setattr(
+        resend.Emails.Receiving,
+        "get",
+        fake_get,
+    )
+
+    email = fetch_received_email(
+        "email-fallback-test",
+        api_key="re_test_key",
+        fallback_message_id="<webhook-message@example.com>",
+    )
+
+    assert email.message_id == (
+        "<webhook-message@example.com>"
+    )

@@ -150,3 +150,34 @@ def test_resend_mode_calls_provider(
     assert result.provider_id == "email-test-123"
     assert result.scheduled is True
     assert captured["scheduled_at"] == "in 24 hours"
+
+
+def test_resend_params_include_thread_headers() -> None:
+    email = OutgoingEmail(
+        recipient="friend@example.com",
+        subject="Re: [Chesspost] Game",
+        body="It is your turn.",
+        reply_address="game-example@chesspost.test",
+        attachment_path=None,
+        delay_hours=0,
+        headers={
+            "In-Reply-To": "<friend-move@example.com>",
+            "References": (
+                "<invitation@example.com> "
+                "<friend-move@example.com>"
+            ),
+        },
+    )
+
+    params = build_resend_params(
+        email=email,
+        sender_address="Chesspost <play@example.com>",
+    )
+
+    assert params["headers"] == {
+        "In-Reply-To": "<friend-move@example.com>",
+        "References": (
+            "<invitation@example.com> "
+            "<friend-move@example.com>"
+        ),
+    }

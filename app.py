@@ -1,18 +1,26 @@
+from dataclasses import replace
 import os
 from pathlib import Path
 
 from fastapi import FastAPI, HTTPException, Request
 from pydantic import BaseModel, Field
 
+from database import get_game
 from email_gateway import GatewayResult, process_incoming_email
 from outbound_mailer import (
     DeliveryResult,
     dispatch_outgoing_emails,
 )
 from resend_inbound import (
+    ReceivedEmail,
     fetch_received_email,
     get_received_email_id,
     verify_resend_event,
+)
+from thread_store import (
+    build_reply_headers,
+    build_reply_subject,
+    save_thread_context,
 )
 
 
@@ -52,6 +60,85 @@ def attachment_directory() -> Path:
     )
 
 
+def save_received_thread_context(
+    result: GatewayResult,
+    received_email: ReceivedEmail,
+) -> None:
+    """Save thread information when the sender belongs to the game."""
+    if result.game_code is None or not received_email.message_id:
+        return
+
+    game = get_game(
+        result.game_code,
+        database_path(),
+    )
+
+    if game is None:
+        return
+
+    sender_email = received_email.sender_email.strip().lower()
+
+    if sender_email not in {
+        game.white_email,
+        game.black_email,
+    }:
+        return
+
+    save_thread_context(
+        game_code=game.code,
+        player_email=sender_email,
+        message_id=received_email.message_id,
+        references=received_email.references,
+        subject=received_email.subject,
+        db_path=database_path(),
+    )
+
+
+def apply_thread_headers(
+    result: GatewayResult,
+) -> GatewayResult:
+    """Attach each recipient's saved email-thread headers."""
+    if result.game_code is None:
+        return result
+
+    threaded_emails = []
+
+    for outgoing in result.emails:
+        headers = build_reply_headers(
+            game_code=result.game_code,
+            player_email=outgoing.recipient,
+            db_path=database_path(),
+        )
+
+        reply_subject = build_reply_subject(
+            game_code=result.game_code,
+            player_email=outgoing.recipient,
+            db_path=database_path(),
+        )
+
+        subject = reply_subject or outgoing.subject
+
+        if (
+            headers
+            and reply_subject is None
+            and not subject.lower().startswith("re:")
+        ):
+            subject = f"Re: {subject}"
+
+        threaded_emails.append(
+            replace(
+                outgoing,
+                subject=subject,
+                headers=headers or None,
+            )
+        )
+
+    return replace(
+        result,
+        emails=tuple(threaded_emails),
+    )
+
+
 def serialize_result(
     result: GatewayResult,
     deliveries: tuple[DeliveryResult, ...],
@@ -67,6 +154,7 @@ def serialize_result(
                 "subject": outgoing.subject,
                 "body": outgoing.body,
                 "reply_address": outgoing.reply_address,
+                "headers": outgoing.headers,
                 "attachment_path": (
                     str(outgoing.attachment_path)
                     if outgoing.attachment_path is not None
@@ -115,6 +203,8 @@ def inbound_email(
         attachment_directory=attachment_directory(),
     )
 
+    result = apply_thread_headers(result)
+
     deliveries = dispatch_outgoing_emails(result.emails)
 
     return serialize_result(result, deliveries)
@@ -161,8 +251,19 @@ async def resend_webhook(
             "event_type": event.get("type"),
         }
 
+    event_data = event.get("data")
+    event_message_id = ""
+
+    if isinstance(event_data, dict):
+        event_message_id = str(
+            event_data.get("message_id", "")
+        ).strip()
+
     try:
-        received_email = fetch_received_email(email_id)
+        received_email = fetch_received_email(
+            email_id,
+            fallback_message_id=event_message_id,
+        )
     except (RuntimeError, ValueError) as error:
         raise HTTPException(
             status_code=500,
@@ -177,6 +278,13 @@ async def resend_webhook(
         db_path=database_path(),
         attachment_directory=attachment_directory(),
     )
+
+    save_received_thread_context(
+        result,
+        received_email,
+    )
+
+    result = apply_thread_headers(result)
 
     deliveries = dispatch_outgoing_emails(result.emails)
 

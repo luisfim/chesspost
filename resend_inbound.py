@@ -2,6 +2,7 @@ from dataclasses import dataclass
 from email.utils import parseaddr
 from html.parser import HTMLParser
 import os
+import re
 from typing import Any, Mapping
 
 import resend
@@ -15,6 +16,8 @@ class ReceivedEmail:
     recipient_email: str
     subject: str
     body: str
+    message_id: str = ""
+    references: tuple[str, ...] = ()
 
 
 class PlainTextHTMLParser(HTMLParser):
@@ -123,6 +126,52 @@ def get_field(
     return getattr(value, field_name, default)
 
 
+def get_header(
+    headers: Any,
+    header_name: str,
+) -> Any:
+    """Read an email header without depending on capitalization."""
+    if not isinstance(headers, Mapping):
+        return None
+
+    normalized_name = header_name.strip().lower()
+
+    for key, value in headers.items():
+        if str(key).strip().lower() == normalized_name:
+            return value
+
+    return None
+
+
+def normalize_message_references(
+    values: Any,
+) -> tuple[str, ...]:
+    """Normalize and deduplicate email Message-ID references."""
+    if values is None:
+        return ()
+
+    if isinstance(values, (list, tuple)):
+        parts = [str(value) for value in values if value]
+        combined = " ".join(parts)
+    else:
+        combined = str(values)
+
+    message_ids = re.findall(r"<[^<>]+>", combined)
+
+    if not message_ids:
+        message_ids = combined.split()
+
+    normalized: list[str] = []
+
+    for message_id in message_ids:
+        message_id = message_id.strip()
+
+        if message_id and message_id not in normalized:
+            normalized.append(message_id)
+
+    return tuple(normalized)
+
+
 def normalize_email_address(value: str) -> str:
     """Extract and normalize an address such as 'Luis <a@example.com>'."""
     _, parsed_address = parseaddr(value)
@@ -181,6 +230,7 @@ def get_received_email_id(
 def fetch_received_email(
     email_id: str,
     api_key: str | None = None,
+    fallback_message_id: str | None = None,
 ) -> ReceivedEmail:
     """Retrieve the complete body of an inbound email from Resend."""
     selected_api_key = (
@@ -204,6 +254,21 @@ def fetch_received_email(
     subject = str(get_field(response, "subject", "") or "")
     text_body = get_field(response, "text")
     html_body = get_field(response, "html")
+    headers = get_field(response, "headers", {})
+
+    message_id = str(
+        get_field(response, "message_id", "")
+        or get_header(headers, "message-id")
+        or fallback_message_id
+        or ""
+    ).strip()
+
+    references = normalize_message_references(
+        [
+            get_header(headers, "references"),
+            get_header(headers, "in-reply-to"),
+        ]
+    )
 
     if not sender_value:
         raise ValueError("The received email does not contain a sender.")
@@ -226,4 +291,6 @@ def fetch_received_email(
         ),
         subject=subject,
         body=body,
+        message_id=message_id,
+        references=references,
     )

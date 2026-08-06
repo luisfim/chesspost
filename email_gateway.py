@@ -30,6 +30,7 @@ class OutgoingEmail:
     reply_address: str | None
     attachment_path: Path | None
     delay_hours: int
+    headers: dict[str, str] | None = None
 
 
 @dataclass(frozen=True)
