@@ -11,6 +11,11 @@ from outbound_mailer import (
     DeliveryResult,
     dispatch_outgoing_emails,
 )
+from inbound_event_store import (
+    claim_inbound_email,
+    mark_inbound_email_processed,
+    release_inbound_email_claim,
+)
 from resend_inbound import (
     ReceivedEmail,
     fetch_received_email,
@@ -251,44 +256,80 @@ async def resend_webhook(
             "event_type": event.get("type"),
         }
 
-    event_data = event.get("data")
-    event_message_id = ""
+    event_id = request.headers.get("svix-id", "").strip() or None
 
-    if isinstance(event_data, dict):
-        event_message_id = str(
-            event_data.get("message_id", "")
-        ).strip()
+    claimed = claim_inbound_email(
+        email_id=email_id,
+        event_id=event_id,
+        db_path=database_path(),
+    )
+
+    if not claimed:
+        return {
+            "duplicate": True,
+            "received_email_id": email_id,
+        }
 
     try:
+        event_data = event.get("data")
+        event_message_id = ""
+
+        if isinstance(event_data, dict):
+            event_message_id = str(
+                event_data.get("message_id", "")
+            ).strip()
+
         received_email = fetch_received_email(
             email_id,
             fallback_message_id=event_message_id,
         )
-    except (RuntimeError, ValueError) as error:
-        raise HTTPException(
-            status_code=500,
-            detail=str(error),
-        ) from error
 
-    result = process_incoming_email(
-        sender_email=received_email.sender_email,
-        recipient_email=received_email.recipient_email,
-        subject=received_email.subject,
-        body=received_email.body,
-        db_path=database_path(),
-        attachment_directory=attachment_directory(),
-    )
+        result = process_incoming_email(
+            sender_email=received_email.sender_email,
+            recipient_email=received_email.recipient_email,
+            subject=received_email.subject,
+            body=received_email.body,
+            db_path=database_path(),
+            attachment_directory=attachment_directory(),
+        )
 
-    save_received_thread_context(
-        result,
-        received_email,
-    )
+        save_received_thread_context(
+            result,
+            received_email,
+        )
 
-    result = apply_thread_headers(result)
+        result = apply_thread_headers(result)
 
-    deliveries = dispatch_outgoing_emails(result.emails)
+        deliveries = dispatch_outgoing_emails(
+            result.emails
+        )
 
-    response = serialize_result(result, deliveries)
-    response["received_email_id"] = received_email.email_id
+        mark_inbound_email_processed(
+            email_id,
+            database_path(),
+        )
 
-    return response
+        response = serialize_result(
+            result,
+            deliveries,
+        )
+        response["received_email_id"] = (
+            received_email.email_id
+        )
+
+        return response
+
+    except HTTPException:
+        release_inbound_email_claim(
+            email_id,
+            database_path(),
+        )
+        raise
+
+    except Exception:
+        release_inbound_email_claim(
+            email_id,
+            database_path(),
+        )
+        raise
+

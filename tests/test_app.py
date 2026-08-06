@@ -342,3 +342,87 @@ def test_apply_thread_headers_for_recipient(
             "<black-accept@example.com>"
         ),
     }
+
+
+def test_duplicate_resend_email_is_processed_once(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    import app as app_module
+    from resend_inbound import ReceivedEmail
+
+    configure_test_paths(monkeypatch, tmp_path)
+
+    monkeypatch.setenv(
+        "RESEND_WEBHOOK_SECRET",
+        "whsec_test",
+    )
+    monkeypatch.setenv(
+        "CHESSPOST_EMAIL_MODE",
+        "console",
+    )
+
+    fetch_count = 0
+
+    def fake_verify(
+        raw_payload,
+        headers,
+        webhook_secret,
+    ):
+        return {
+            "type": "email.received",
+            "data": {
+                "email_id": "duplicate-email-123",
+                "message_id": "<duplicate@example.com>",
+            },
+        }
+
+    def fake_fetch(
+        email_id,
+        fallback_message_id=None,
+    ):
+        nonlocal fetch_count
+        fetch_count += 1
+
+        return ReceivedEmail(
+            email_id=email_id,
+            sender_email="luis@example.com",
+            recipient_email=MAIN_EMAIL_ADDRESS,
+            subject="friend@example.com",
+            body="color: white",
+            message_id="<duplicate@example.com>",
+        )
+
+    monkeypatch.setattr(
+        app_module,
+        "verify_resend_event",
+        fake_verify,
+    )
+    monkeypatch.setattr(
+        app_module,
+        "fetch_received_email",
+        fake_fetch,
+    )
+
+    first_response = client.post(
+        "/webhooks/resend",
+        content=b'{"type":"email.received"}',
+        headers={"svix-id": "event-first"},
+    )
+
+    second_response = client.post(
+        "/webhooks/resend",
+        content=b'{"type":"email.received"}',
+        headers={"svix-id": "event-second"},
+    )
+
+    assert first_response.status_code == 200
+    assert first_response.json()["processed"] is True
+
+    assert second_response.status_code == 200
+    assert second_response.json() == {
+        "duplicate": True,
+        "received_email_id": "duplicate-email-123",
+    }
+
+    assert fetch_count == 1
