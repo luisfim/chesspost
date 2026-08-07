@@ -418,3 +418,131 @@ def test_active_game_cannot_request_rematch(
     assert result.processed is False
     assert result.route == "game_message"
     assert "only be requested after" in result.emails[0].body
+
+
+def test_draw_offer_can_be_accepted_through_email(
+    tmp_path,
+) -> None:
+    database_path = tmp_path / "test.db"
+    boards = tmp_path / "boards"
+
+    invitation = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=MAIN_EMAIL_ADDRESS,
+        subject="black@example.com",
+        body="color: white",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    game_address = invitation.emails[0].reply_address
+    assert game_address is not None
+
+    process_incoming_email(
+        sender_email="black@example.com",
+        recipient_email=game_address,
+        subject="Re: invitation",
+        body="accept",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    offer = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=game_address,
+        subject="Re: game",
+        body="offer draw",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    assert offer.route == "draw_offer"
+    assert offer.processed is True
+    assert offer.emails[0].recipient == "black@example.com"
+
+    accepted = process_incoming_email(
+        sender_email="black@example.com",
+        recipient_email=game_address,
+        subject="Re: game",
+        body="accept draw",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    assert accepted.route == "game_finished"
+    assert accepted.processed is True
+    assert len(accepted.emails) == 2
+
+    for email in accepted.emails:
+        assert "Draw agreed" in email.body
+        assert "1/2-1/2" in email.body
+        assert "rematch" in email.body
+
+
+def test_move_implicitly_declines_draw_offer(
+    tmp_path,
+) -> None:
+    from draw_service import get_draw_offer
+
+    database_path = tmp_path / "test.db"
+    boards = tmp_path / "boards"
+
+    invitation = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=MAIN_EMAIL_ADDRESS,
+        subject="black@example.com",
+        body="color: white",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    game_address = invitation.emails[0].reply_address
+    assert game_address is not None
+
+    process_incoming_email(
+        sender_email="black@example.com",
+        recipient_email=game_address,
+        subject="Re: invitation",
+        body="accept",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=game_address,
+        subject="Re: game",
+        body="e4",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=game_address,
+        subject="Re: game",
+        body="offer draw",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    assert get_draw_offer(
+        invitation.game_code,
+        database_path,
+    ) is not None
+
+    black_move = process_incoming_email(
+        sender_email="black@example.com",
+        recipient_email=game_address,
+        subject="Re: game",
+        body="e5",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    assert black_move.processed is True
+
+    assert get_draw_offer(
+        invitation.game_code,
+        database_path,
+    ) is None

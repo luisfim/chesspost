@@ -10,6 +10,13 @@ from email_service import (
     process_game_email,
 )
 from email_parser import parse_email_body
+from draw_service import (
+    accept_draw,
+    clear_draw_offer,
+    decline_draw,
+    get_draw_offer,
+    offer_draw,
+)
 from game_service import resign_game
 from game_summary import (
     build_final_email_body,
@@ -221,6 +228,191 @@ def process_incoming_email(
         )
 
     parsed_email = parse_email_body(body)
+
+    if (
+        parsed_email.valid
+        and parsed_email.command == "offer_draw"
+    ):
+        draw_result = offer_draw(
+            game_code,
+            sender_email,
+            db_path,
+        )
+
+        if not draw_result.accepted:
+            response = error_response(
+                sender_email,
+                game_code,
+                draw_result.message,
+            )
+
+            return GatewayResult(
+                route="game_message",
+                processed=False,
+                game_code=game_code,
+                emails=(
+                    OutgoingEmail(
+                        recipient=response.recipient,
+                        subject=response.subject,
+                        body=response.body,
+                        reply_address=recipient_email,
+                        attachment_path=None,
+                        delay_hours=0,
+                    ),
+                ),
+            )
+
+        opponent = (
+            game.black_email
+            if sender_email == game.white_email
+            else game.white_email
+        )
+
+        return GatewayResult(
+            route="draw_offer",
+            processed=True,
+            game_code=game_code,
+            emails=(
+                OutgoingEmail(
+                    recipient=opponent,
+                    subject=f"[Chesspost {game_code[:8].upper()}] Draw offer",
+                    body=(
+                        f"{sender_email} offered a draw.\n\n"
+                        "Reply with:\n\n"
+                        "accept draw\n\n"
+                        "or:\n\n"
+                        "decline draw\n\n"
+                        "You may also make your next move to "
+                        "decline the offer automatically."
+                    ),
+                    reply_address=recipient_email,
+                    attachment_path=None,
+                    delay_hours=0,
+                ),
+            ),
+        )
+
+    if (
+        parsed_email.valid
+        and parsed_email.command == "accept_draw"
+    ):
+        draw_result = accept_draw(
+            game_code,
+            sender_email,
+            db_path,
+        )
+
+        if not draw_result.accepted:
+            response = error_response(
+                sender_email,
+                game_code,
+                draw_result.message,
+            )
+
+            return GatewayResult(
+                route="game_message",
+                processed=False,
+                game_code=game_code,
+                emails=(
+                    OutgoingEmail(
+                        recipient=response.recipient,
+                        subject=response.subject,
+                        body=response.body,
+                        reply_address=recipient_email,
+                        attachment_path=None,
+                        delay_hours=0,
+                    ),
+                ),
+            )
+
+        return GatewayResult(
+            route="game_finished",
+            processed=True,
+            game_code=game_code,
+            emails=build_finished_game_emails(
+                game=draw_result.game,
+                attachment_directory=attachment_directory,
+                db_path=db_path,
+                termination_override="Draw agreed",
+            ),
+        )
+
+    if (
+        parsed_email.valid
+        and parsed_email.command == "decline_draw"
+    ):
+        draw_result = decline_draw(
+            game_code,
+            sender_email,
+            db_path,
+        )
+
+        if not draw_result.accepted:
+            response = error_response(
+                sender_email,
+                game_code,
+                draw_result.message,
+            )
+
+            return GatewayResult(
+                route="game_message",
+                processed=False,
+                game_code=game_code,
+                emails=(
+                    OutgoingEmail(
+                        recipient=response.recipient,
+                        subject=response.subject,
+                        body=response.body,
+                        reply_address=recipient_email,
+                        attachment_path=None,
+                        delay_hours=0,
+                    ),
+                ),
+            )
+
+        offerer = (
+            game.black_email
+            if sender_email == game.white_email
+            else game.white_email
+        )
+
+        return GatewayResult(
+            route="draw_declined",
+            processed=True,
+            game_code=game_code,
+            emails=(
+                OutgoingEmail(
+                    recipient=offerer,
+                    subject=f"[Chesspost {game_code[:8].upper()}] Draw declined",
+                    body=(
+                        f"{sender_email} declined the draw offer.\n\n"
+                        "The game continues."
+                    ),
+                    reply_address=recipient_email,
+                    attachment_path=None,
+                    delay_hours=0,
+                ),
+            ),
+        )
+
+    # Making a move implicitly declines the opponent's draw offer.
+    if (
+        parsed_email.valid
+        and parsed_email.command == "move"
+    ):
+        pending_offer = get_draw_offer(
+            game_code,
+            db_path,
+        )
+
+        if (
+            pending_offer is not None
+            and pending_offer.offered_by_email != sender_email
+        ):
+            clear_draw_offer(
+                game_code,
+                db_path,
+            )
 
     if (
         parsed_email.valid
