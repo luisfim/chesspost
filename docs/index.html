@@ -1,0 +1,329 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+
+    <title>Chesspost — Correspondence Chess by Email</title>
+
+    <meta
+        name="description"
+        content="Play correspondence chess entirely through email. No account, app, or chess website required."
+    >
+
+    <link rel="stylesheet" href="style.css">
+</head>
+
+<body>
+
+<header>
+    <div class="container">
+        <a class="logo" href="./">
+            ♟ Chesspost
+        </a>
+
+        <nav>
+            <a href="#how">How it works</a>
+            <a href="#commands">Commands</a>
+            <a
+                href="https://github.com/luisfim/chesspost"
+                target="_blank"
+                rel="noopener noreferrer"
+            >
+                GitHub
+            </a>
+        </nav>
+    </div>
+</header>
+
+
+<main>
+
+<section class="hero">
+    <div class="container">
+
+        <p class="eyebrow">
+            CORRESPONDENCE CHESS BY EMAIL
+        </p>
+
+        <h1>
+            Play chess.<br>
+            Just reply to your email.
+        </h1>
+
+        <p class="hero-description">
+            Chesspost lets two people play a complete chess game
+            without creating an account or opening a chess website.
+        </p>
+
+        <div class="hero-actions">
+            <a
+                class="button primary"
+                href="mailto:play@yanueslo.resend.app"
+            >
+                Start a game
+            </a>
+
+            <a
+                class="button secondary"
+                href="#how"
+            >
+                How it works
+            </a>
+        </div>
+
+        <p class="development-note">
+            Chesspost is currently under development.
+        </p>
+
+    </div>
+</section>
+
+
+<section class="example-section">
+    <div class="container">
+
+        <div class="email-window">
+
+            <div class="email-header">
+                <span></span>
+                <span></span>
+                <span></span>
+            </div>
+
+            <div class="email-content">
+                <p>
+                    <strong>To:</strong>
+                    play@yanueslo.resend.app
+                </p>
+
+                <p>
+                    <strong>Subject:</strong>
+                    friend@example.com
+                </p>
+
+                <hr>
+
+                <pre>color: random
+delay: immediate</pre>
+            </div>
+
+        </div>
+
+    </div>
+</section>
+
+
+<section id="how">
+    <div class="container">
+
+        <p class="eyebrow">HOW IT WORKS</p>
+
+        <h2>
+            Starting a game takes one email.
+        </h2>
+
+        <div class="steps">
+
+            <article>
+                <span class="step-number">01</span>
+
+                <h3>Send an email</h3>
+
+                <p>
+                    Email
+                    <code>play@yanueslo.resend.app</code>
+                    and put your opponent's email address
+                    in the subject.
+                </p>
+            </article>
+
+
+            <article>
+                <span class="step-number">02</span>
+
+                <h3>Your opponent accepts</h3>
+
+                <p>
+                    They receive an invitation and simply reply
+                    with <code>accept</code>.
+                </p>
+            </article>
+
+
+            <article>
+                <span class="step-number">03</span>
+
+                <h3>Reply with moves</h3>
+
+                <p>
+                    From that point on, just reply to the same
+                    email conversation with moves such as
+                    <code>e4</code>, <code>Nf3</code> or
+                    <code>O-O</code>.
+                </p>
+            </article>
+
+
+            <article>
+                <span class="step-number">04</span>
+
+                <h3>Chesspost handles the rest</h3>
+
+                <p>
+                    Legal moves are sent to your opponent together
+                    with an updated board image. Illegal moves are
+                    returned only to you.
+                </p>
+            </article>
+
+        </div>
+
+    </div>
+</section>
+
+
+<section class="details">
+    <div class="container two-columns">
+
+        <div>
+            <p class="eyebrow">STARTING OPTIONS</p>
+
+            <h2>Optional settings</h2>
+
+            <p>
+                The email body can be empty. If you want,
+                you can configure the game:
+            </p>
+
+            <pre class="code-block">color: white
+delay: 24h</pre>
+
+            <p>
+                Available colors:
+                <code>white</code>,
+                <code>black</code>, or
+                <code>random</code>.
+            </p>
+
+            <p>
+                Without options, Chesspost chooses a random color
+                and delivers moves immediately.
+            </p>
+        </div>
+
+
+        <div>
+            <p class="eyebrow">THE BOARD</p>
+
+            <h2>No chess interface required</h2>
+
+            <p>
+                Every move email ends with an image showing the
+                current board from your perspective.
+            </p>
+
+            <p>
+                Chesspost also keeps track of turns, legal moves,
+                checkmate, draws, resignation and game history.
+            </p>
+        </div>
+
+    </div>
+</section>
+
+
+<section id="commands">
+    <div class="container">
+
+        <p class="eyebrow">EMAIL COMMANDS</p>
+
+        <h2>
+            Everything happens by replying.
+        </h2>
+
+        <div class="commands">
+
+            <div>
+                <code>e4</code>
+                <span>Play a move</span>
+            </div>
+
+            <div>
+                <code>accept</code>
+                <span>Accept an invitation</span>
+            </div>
+
+            <div>
+                <code>decline</code>
+                <span>Decline an invitation</span>
+            </div>
+
+            <div>
+                <code>resign</code>
+                <span>Resign the game</span>
+            </div>
+
+            <div>
+                <code>offer draw</code>
+                <span>Offer a draw</span>
+            </div>
+
+            <div>
+                <code>accept draw</code>
+                <span>Accept a draw</span>
+            </div>
+
+            <div>
+                <code>decline draw</code>
+                <span>Decline a draw</span>
+            </div>
+
+            <div>
+                <code>rematch</code>
+                <span>Request another game</span>
+            </div>
+
+        </div>
+
+    </div>
+</section>
+
+
+<section class="philosophy">
+    <div class="container">
+
+        <blockquote>
+            No account.<br>
+            No app.<br>
+            No chess website.<br>
+            Just email.
+        </blockquote>
+
+    </div>
+</section>
+
+
+</main>
+
+
+<footer>
+    <div class="container">
+
+        <p>
+            Chesspost is an open-source personal project.
+        </p>
+
+        <a
+            href="https://github.com/luisfim/chesspost"
+            target="_blank"
+            rel="noopener noreferrer"
+        >
+            View source on GitHub →
+        </a>
+
+    </div>
+</footer>
+
+</body>
+</html>
