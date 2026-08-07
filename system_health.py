@@ -111,7 +111,8 @@ def get_system_health(
                     'system_error',
                     'move_rejected',
                     'command_rejected',
-                    'invitation_rejected'
+                    'invitation_rejected',
+                    'security_rejected'
                 )
                 ORDER BY id DESC
                 LIMIT 15

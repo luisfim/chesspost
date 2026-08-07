@@ -1,5 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, replace
 from pathlib import Path
+
+from game_mailbox import (
+    ensure_game_mailboxes,
+    game_email_address as secure_game_email_address,
+    resolve_game_email_address,
+)
 import re
 
 from database import DATABASE_PATH, get_game
@@ -148,7 +154,7 @@ def build_finished_game_emails(
     return tuple(emails)
 
 
-def process_incoming_email(
+def _process_incoming_email_core(
     *,
     sender_email: str,
     recipient_email: str,
@@ -639,4 +645,220 @@ def process_incoming_email(
         processed=move_response.delivered_to_opponent,
         game_code=game_code,
         emails=(outgoing_email,),
+    )
+
+
+
+def _security_rejection(
+    sender_email: str,
+    game_code: str | None = None,
+) -> GatewayResult:
+    """
+    Return a deliberately generic response.
+
+    We do not reveal which player owns a secret game address.
+    """
+    return GatewayResult(
+        route="security_rejected",
+        processed=False,
+        game_code=game_code,
+        emails=(
+            OutgoingEmail(
+                recipient=sender_email,
+                subject="[Chesspost] Invalid game address",
+                body=(
+                    "This game email address cannot be used "
+                    "by this sender.\n\n"
+                    "Please reply to the most recent Chesspost "
+                    "email sent directly to you."
+                ),
+                reply_address=None,
+                attachment_path=None,
+                delay_hours=0,
+            ),
+        ),
+    )
+
+
+def _apply_secure_reply_addresses(
+    result: GatewayResult,
+    db_path: Path,
+) -> GatewayResult:
+    """
+    Give each player their own persistent Reply-To address.
+
+    Every outgoing message sent to a player receives that player's
+    secret mailbox as its Reply-To address.
+    """
+    if result.game_code is None:
+        return result
+
+    game = get_game(
+        result.game_code,
+        db_path,
+    )
+
+    if game is None:
+        return result
+
+    ensure_game_mailboxes(
+        game,
+        db_path,
+    )
+
+    players = {
+        game.white_email,
+        game.black_email,
+    }
+
+    emails: list[OutgoingEmail] = []
+
+    for email in result.emails:
+        recipient = (
+            email.recipient
+            .strip()
+            .lower()
+        )
+
+        if recipient not in players:
+            emails.append(email)
+            continue
+
+        reply_address = secure_game_email_address(
+            game.code,
+            recipient,
+            db_path,
+        )
+
+        emails.append(
+            replace(
+                email,
+                reply_address=reply_address,
+            )
+        )
+
+    return replace(
+        result,
+        emails=tuple(emails),
+    )
+
+
+def process_incoming_email(
+    *,
+    sender_email: str,
+    recipient_email: str,
+    subject: str,
+    body: str,
+    db_path: Path = DATABASE_PATH,
+    attachment_directory: Path = DEFAULT_ATTACHMENT_DIRECTORY,
+) -> GatewayResult:
+    """
+    Secure gateway wrapper.
+
+    New games use per-player secret mailboxes.
+
+    Existing legacy games continue using their original shared
+    game-CODE address until they finish.
+    """
+    sender_email = (
+        sender_email
+        .strip()
+        .lower()
+    )
+
+    recipient_email = (
+        recipient_email
+        .strip()
+        .lower()
+    )
+
+    # Starting a brand-new game still happens through play@...
+    if recipient_email == MAIN_EMAIL_ADDRESS:
+        result = _process_incoming_email_core(
+            sender_email=sender_email,
+            recipient_email=recipient_email,
+            subject=subject,
+            body=body,
+            db_path=db_path,
+            attachment_directory=attachment_directory,
+        )
+
+        # Any new game created after this migration immediately
+        # receives secure per-player aliases.
+        if (
+            result.processed
+            and result.route == "new_game"
+            and result.game_code is not None
+        ):
+            return _apply_secure_reply_addresses(
+                result,
+                db_path,
+            )
+
+        return result
+
+    resolved = resolve_game_email_address(
+        recipient_email,
+        db_path,
+    )
+
+    looks_like_game_address = (
+        recipient_email.startswith("game-")
+        and recipient_email.endswith(
+            f"@{GAME_EMAIL_DOMAIN}"
+        )
+    )
+
+    # A malformed token, unknown token, or old shared alias belonging
+    # to a secure game must never fall through to the old gateway.
+    if resolved is None:
+        if looks_like_game_address:
+            return _security_rejection(
+                sender_email,
+            )
+
+        return _process_incoming_email_core(
+            sender_email=sender_email,
+            recipient_email=recipient_email,
+            subject=subject,
+            body=body,
+            db_path=db_path,
+            attachment_directory=attachment_directory,
+        )
+
+    # Secure aliases identify one specific player.
+    if (
+        resolved.secure
+        and resolved.player_email != sender_email
+    ):
+        return _security_rejection(
+            sender_email,
+            resolved.game.code,
+        )
+
+    # The existing core understands the old game-CODE address.
+    # Internally we translate the secure address to that representation.
+    legacy_internal_address = (
+        f"game-{resolved.game.code}"
+        f"@{GAME_EMAIL_DOMAIN}"
+    )
+
+    result = _process_incoming_email_core(
+        sender_email=sender_email,
+        recipient_email=legacy_internal_address,
+        subject=subject,
+        body=body,
+        db_path=db_path,
+        attachment_directory=attachment_directory,
+    )
+
+    # If this was an old pre-migration game, preserve the old
+    # address so existing email conversations remain functional.
+    if not resolved.secure:
+        return result
+
+    # A rematch creates a new game. It also needs fresh secure aliases.
+    return _apply_secure_reply_addresses(
+        result,
+        db_path,
     )

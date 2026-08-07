@@ -1,7 +1,34 @@
+from game_mailbox import (
+    GAME_EMAIL_DOMAIN,
+    game_email_address as secure_game_email_address,
+    resolve_game_email_address,
+)
+
 from email_gateway import (
     MAIN_EMAIL_ADDRESS,
     process_incoming_email,
 )
+
+
+
+def player_game_address(
+    existing_address: str,
+    player_email: str,
+    database_path,
+) -> str:
+    """Return the secure game address belonging to one player."""
+    resolved = resolve_game_email_address(
+        existing_address,
+        database_path,
+    )
+
+    assert resolved is not None
+
+    return secure_game_email_address(
+        resolved.game.code,
+        player_email,
+        database_path,
+    )
 
 
 def test_main_address_creates_invitation(tmp_path) -> None:
@@ -88,7 +115,11 @@ def test_game_can_continue_through_gateway(tmp_path) -> None:
 
     process_incoming_email(
         sender_email="friend@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "friend@example.com",
+            database_path,
+        ),
         subject="Re: Chess invitation",
         body="accept",
         db_path=database_path,
@@ -97,7 +128,11 @@ def test_game_can_continue_through_gateway(tmp_path) -> None:
 
     move_result = process_incoming_email(
         sender_email="luis@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "luis@example.com",
+            database_path,
+        ),
         subject="Re: Game started",
         body="e4",
         db_path=database_path,
@@ -135,7 +170,11 @@ def test_illegal_move_returns_to_sender(tmp_path) -> None:
 
     process_incoming_email(
         sender_email="friend@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "friend@example.com",
+            database_path,
+        ),
         subject="Re: Invitation",
         body="accept",
         db_path=database_path,
@@ -144,7 +183,11 @@ def test_illegal_move_returns_to_sender(tmp_path) -> None:
 
     illegal_result = process_incoming_email(
         sender_email="luis@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "luis@example.com",
+            database_path,
+        ),
         subject="Re: Game",
         body="e5",
         db_path=database_path,
@@ -197,7 +240,11 @@ def test_resign_finishes_game_and_emails_both_players(
 
     process_incoming_email(
         sender_email="black@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "black@example.com",
+            database_path,
+        ),
         subject="Re: invitation",
         body="accept",
         db_path=database_path,
@@ -206,7 +253,11 @@ def test_resign_finishes_game_and_emails_both_players(
 
     result = process_incoming_email(
         sender_email="white@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "white@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="resign",
         db_path=database_path,
@@ -254,7 +305,11 @@ def test_checkmate_sends_final_report_to_both_players(
 
     process_incoming_email(
         sender_email="black@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "black@example.com",
+            database_path,
+        ),
         subject="Re: invitation",
         body="accept",
         db_path=database_path,
@@ -270,7 +325,11 @@ def test_checkmate_sends_final_report_to_both_players(
     for sender, move in sequence:
         result = process_incoming_email(
             sender_email=sender,
-            recipient_email=game_address,
+            recipient_email=player_game_address(
+                game_address,
+                sender,
+                database_path,
+            ),
             subject="Re: game",
             body=move,
             db_path=database_path,
@@ -281,7 +340,11 @@ def test_checkmate_sends_final_report_to_both_players(
 
     mate = process_incoming_email(
         sender_email="black@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "black@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="Qh4#",
         db_path=database_path,
@@ -325,7 +388,11 @@ def test_finished_game_can_create_rematch(
 
     process_incoming_email(
         sender_email="black@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "black@example.com",
+            database_path,
+        ),
         subject="Re: invitation",
         body="accept",
         db_path=database_path,
@@ -334,7 +401,11 @@ def test_finished_game_can_create_rematch(
 
     process_incoming_email(
         sender_email="white@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "white@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="resign",
         db_path=database_path,
@@ -343,7 +414,11 @@ def test_finished_game_can_create_rematch(
 
     rematch = process_incoming_email(
         sender_email="white@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "white@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="rematch",
         db_path=database_path,
@@ -399,7 +474,11 @@ def test_active_game_cannot_request_rematch(
 
     process_incoming_email(
         sender_email="black@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "black@example.com",
+            database_path,
+        ),
         subject="Re: invitation",
         body="accept",
         db_path=database_path,
@@ -408,7 +487,11 @@ def test_active_game_cannot_request_rematch(
 
     result = process_incoming_email(
         sender_email="white@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "white@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="rematch",
         db_path=database_path,
@@ -440,7 +523,11 @@ def test_draw_offer_can_be_accepted_through_email(
 
     process_incoming_email(
         sender_email="black@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "black@example.com",
+            database_path,
+        ),
         subject="Re: invitation",
         body="accept",
         db_path=database_path,
@@ -449,7 +536,11 @@ def test_draw_offer_can_be_accepted_through_email(
 
     offer = process_incoming_email(
         sender_email="white@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "white@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="offer draw",
         db_path=database_path,
@@ -462,7 +553,11 @@ def test_draw_offer_can_be_accepted_through_email(
 
     accepted = process_incoming_email(
         sender_email="black@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "black@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="accept draw",
         db_path=database_path,
@@ -501,7 +596,11 @@ def test_move_implicitly_declines_draw_offer(
 
     process_incoming_email(
         sender_email="black@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "black@example.com",
+            database_path,
+        ),
         subject="Re: invitation",
         body="accept",
         db_path=database_path,
@@ -510,7 +609,11 @@ def test_move_implicitly_declines_draw_offer(
 
     process_incoming_email(
         sender_email="white@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "white@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="e4",
         db_path=database_path,
@@ -519,7 +622,11 @@ def test_move_implicitly_declines_draw_offer(
 
     process_incoming_email(
         sender_email="white@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "white@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="offer draw",
         db_path=database_path,
@@ -533,7 +640,11 @@ def test_move_implicitly_declines_draw_offer(
 
     black_move = process_incoming_email(
         sender_email="black@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "black@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="e5",
         db_path=database_path,
@@ -568,7 +679,11 @@ def test_player_can_request_help_by_email(
 
     process_incoming_email(
         sender_email="black@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "black@example.com",
+            database_path,
+        ),
         subject="Re: invitation",
         body="accept",
         db_path=database_path,
@@ -577,7 +692,11 @@ def test_player_can_request_help_by_email(
 
     response = process_incoming_email(
         sender_email="white@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "white@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="help",
         db_path=database_path,
@@ -611,7 +730,11 @@ def test_player_can_request_current_board_by_email(
 
     process_incoming_email(
         sender_email="black@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "black@example.com",
+            database_path,
+        ),
         subject="Re: invitation",
         body="accept",
         db_path=database_path,
@@ -620,7 +743,11 @@ def test_player_can_request_current_board_by_email(
 
     response = process_incoming_email(
         sender_email="white@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "white@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="show board",
         db_path=database_path,
@@ -654,7 +781,11 @@ def test_player_can_request_move_history_by_email(
 
     process_incoming_email(
         sender_email="black@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "black@example.com",
+            database_path,
+        ),
         subject="Re: invitation",
         body="accept",
         db_path=database_path,
@@ -663,7 +794,11 @@ def test_player_can_request_move_history_by_email(
 
     process_incoming_email(
         sender_email="white@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "white@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="e4",
         db_path=database_path,
@@ -672,7 +807,11 @@ def test_player_can_request_move_history_by_email(
 
     response = process_incoming_email(
         sender_email="black@example.com",
-        recipient_email=game_address,
+        recipient_email=player_game_address(
+            game_address,
+            "black@example.com",
+            database_path,
+        ),
         subject="Re: game",
         body="show moves",
         db_path=database_path,
@@ -684,3 +823,261 @@ def test_player_can_request_move_history_by_email(
     assert len(response.emails) == 1
     assert response.emails[0].recipient == "black@example.com"
     assert "1. e4" in response.emails[0].body
+
+
+def test_new_game_invitation_uses_secure_player_address(
+    tmp_path,
+) -> None:
+    from game_mailbox import resolve_game_email_address
+
+    database_path = tmp_path / "test.db"
+    boards = tmp_path / "boards"
+
+    invitation = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=MAIN_EMAIL_ADDRESS,
+        subject="black@example.com",
+        body="color: white",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    address = invitation.emails[0].reply_address
+
+    assert address is not None
+
+    resolved = resolve_game_email_address(
+        address,
+        database_path,
+    )
+
+    assert resolved is not None
+    assert resolved.secure is True
+    assert resolved.player_email == "black@example.com"
+
+
+def test_each_player_receives_own_secret_address_after_accept(
+    tmp_path,
+) -> None:
+    from game_mailbox import resolve_game_email_address
+
+    database_path = tmp_path / "test.db"
+    boards = tmp_path / "boards"
+
+    invitation = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=MAIN_EMAIL_ADDRESS,
+        subject="black@example.com",
+        body="color: white",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    black_address = invitation.emails[0].reply_address
+    assert black_address is not None
+
+    accepted = process_incoming_email(
+        sender_email="black@example.com",
+        recipient_email=black_address,
+        subject="Re: invitation",
+        body="accept",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    assert len(accepted.emails) == 2
+
+    addresses = {
+        email.recipient: email.reply_address
+        for email in accepted.emails
+    }
+
+    assert addresses["white@example.com"] is not None
+    assert addresses["black@example.com"] is not None
+
+    assert (
+        addresses["white@example.com"]
+        != addresses["black@example.com"]
+    )
+
+    for player_email, address in addresses.items():
+        resolved = resolve_game_email_address(
+            address,
+            database_path,
+        )
+
+        assert resolved is not None
+        assert resolved.secure is True
+        assert resolved.player_email == player_email
+
+
+def test_move_reply_address_belongs_to_opponent(
+    tmp_path,
+) -> None:
+    from game_mailbox import resolve_game_email_address
+
+    database_path = tmp_path / "test.db"
+    boards = tmp_path / "boards"
+
+    invitation = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=MAIN_EMAIL_ADDRESS,
+        subject="black@example.com",
+        body="color: white",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    black_address = invitation.emails[0].reply_address
+    assert black_address is not None
+
+    accepted = process_incoming_email(
+        sender_email="black@example.com",
+        recipient_email=black_address,
+        subject="Re: invitation",
+        body="accept",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    white_start_email = next(
+        email
+        for email in accepted.emails
+        if email.recipient == "white@example.com"
+    )
+
+    white_address = white_start_email.reply_address
+    assert white_address is not None
+
+    move = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=white_address,
+        subject="Re: game",
+        body="e4",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    assert move.processed is True
+    assert len(move.emails) == 1
+
+    opponent_email = move.emails[0]
+
+    assert opponent_email.recipient == "black@example.com"
+    assert opponent_email.reply_address is not None
+
+    resolved = resolve_game_email_address(
+        opponent_email.reply_address,
+        database_path,
+    )
+
+    assert resolved is not None
+    assert resolved.player_email == "black@example.com"
+
+
+def test_player_cannot_use_opponents_secret_address(
+    tmp_path,
+) -> None:
+    database_path = tmp_path / "test.db"
+    boards = tmp_path / "boards"
+
+    invitation = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=MAIN_EMAIL_ADDRESS,
+        subject="black@example.com",
+        body="color: white",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    black_address = invitation.emails[0].reply_address
+    assert black_address is not None
+
+    # White somehow learns Black's secret address and attempts
+    # to use it.
+    rejected = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=black_address,
+        subject="Re: invitation",
+        body="accept",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    assert rejected.processed is False
+    assert rejected.route == "security_rejected"
+    assert len(rejected.emails) == 1
+    assert rejected.emails[0].recipient == "white@example.com"
+
+
+def test_shared_address_is_disabled_for_new_secure_game(
+    tmp_path,
+) -> None:
+    database_path = tmp_path / "test.db"
+    boards = tmp_path / "boards"
+
+    invitation = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=MAIN_EMAIL_ADDRESS,
+        subject="black@example.com",
+        body="color: white",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    assert invitation.game_code is not None
+
+    old_shared_address = (
+        f"game-{invitation.game_code}"
+        f"@{GAME_EMAIL_DOMAIN}"
+    )
+
+    result = process_incoming_email(
+        sender_email="black@example.com",
+        recipient_email=old_shared_address,
+        subject="Re: invitation",
+        body="accept",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    assert result.processed is False
+    assert result.route == "security_rejected"
+
+
+def test_legacy_game_address_still_works(
+    tmp_path,
+) -> None:
+    from database import create_game
+
+    database_path = tmp_path / "test.db"
+    boards = tmp_path / "boards"
+
+    game = create_game(
+        "white@example.com",
+        "black@example.com",
+        database_path,
+    )
+
+    legacy_address = (
+        f"game-{game.code}"
+        f"@{GAME_EMAIL_DOMAIN}"
+    )
+
+    result = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=legacy_address,
+        subject="Re: old game",
+        body="e4",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    assert result.processed is True
+    assert result.emails[0].recipient == "black@example.com"
+
+    # An old game should not suddenly change address halfway through.
+    assert (
+        result.emails[0].reply_address
+        == legacy_address
+    )
