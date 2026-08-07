@@ -1,3 +1,9 @@
+from activity_observer import (
+    record_delivery_results,
+    record_gateway_result,
+    record_received_email,
+)
+from admin_dashboard import router as admin_router
 from dataclasses import replace
 import os
 from pathlib import Path
@@ -287,6 +293,11 @@ async def resend_webhook(
             fallback_message_id=event_message_id,
         )
 
+        record_received_email(
+            received_email,
+            database_path(),
+        )
+
         result = process_incoming_email(
             sender_email=received_email.sender_email,
             recipient_email=received_email.recipient_email,
@@ -294,6 +305,12 @@ async def resend_webhook(
             body=received_email.body,
             db_path=database_path(),
             attachment_directory=attachment_directory(),
+        )
+
+        record_gateway_result(
+            result,
+            received_email,
+            database_path(),
         )
 
         save_received_thread_context(
@@ -305,6 +322,12 @@ async def resend_webhook(
 
         deliveries = dispatch_outgoing_emails(
             result.emails
+        )
+
+        record_delivery_results(
+            result,
+            deliveries,
+            database_path(),
         )
 
         mark_inbound_email_processed(
@@ -336,3 +359,5 @@ async def resend_webhook(
         )
         raise
 
+
+app.include_router(admin_router)
