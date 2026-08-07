@@ -77,6 +77,15 @@ def record_gateway_result(
             )
             detail = command
 
+    elif route == "game_help":
+        event_type = "help_requested"
+
+    elif route == "game_board":
+        event_type = "board_requested"
+
+    elif route == "game_moves":
+        event_type = "move_history_requested"
+
     elif route == "draw_offer":
         event_type = "draw_offered"
 

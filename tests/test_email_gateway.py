@@ -546,3 +546,141 @@ def test_move_implicitly_declines_draw_offer(
         invitation.game_code,
         database_path,
     ) is None
+
+
+def test_player_can_request_help_by_email(
+    tmp_path,
+) -> None:
+    database_path = tmp_path / "test.db"
+    boards = tmp_path / "boards"
+
+    invitation = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=MAIN_EMAIL_ADDRESS,
+        subject="black@example.com",
+        body="color: white",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    game_address = invitation.emails[0].reply_address
+    assert game_address is not None
+
+    process_incoming_email(
+        sender_email="black@example.com",
+        recipient_email=game_address,
+        subject="Re: invitation",
+        body="accept",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    response = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=game_address,
+        subject="Re: game",
+        body="help",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    assert response.route == "game_help"
+    assert response.processed is True
+    assert len(response.emails) == 1
+    assert response.emails[0].recipient == "white@example.com"
+    assert "show board" in response.emails[0].body
+
+
+def test_player_can_request_current_board_by_email(
+    tmp_path,
+) -> None:
+    database_path = tmp_path / "test.db"
+    boards = tmp_path / "boards"
+
+    invitation = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=MAIN_EMAIL_ADDRESS,
+        subject="black@example.com",
+        body="color: white",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    game_address = invitation.emails[0].reply_address
+    assert game_address is not None
+
+    process_incoming_email(
+        sender_email="black@example.com",
+        recipient_email=game_address,
+        subject="Re: invitation",
+        body="accept",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    response = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=game_address,
+        subject="Re: game",
+        body="show board",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    assert response.route == "game_board"
+    assert response.processed is True
+    assert len(response.emails) == 1
+    assert response.emails[0].recipient == "white@example.com"
+    assert response.emails[0].attachment_path is not None
+
+
+def test_player_can_request_move_history_by_email(
+    tmp_path,
+) -> None:
+    database_path = tmp_path / "test.db"
+    boards = tmp_path / "boards"
+
+    invitation = process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=MAIN_EMAIL_ADDRESS,
+        subject="black@example.com",
+        body="color: white",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    game_address = invitation.emails[0].reply_address
+    assert game_address is not None
+
+    process_incoming_email(
+        sender_email="black@example.com",
+        recipient_email=game_address,
+        subject="Re: invitation",
+        body="accept",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    process_incoming_email(
+        sender_email="white@example.com",
+        recipient_email=game_address,
+        subject="Re: game",
+        body="e4",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    response = process_incoming_email(
+        sender_email="black@example.com",
+        recipient_email=game_address,
+        subject="Re: game",
+        body="show moves",
+        db_path=database_path,
+        attachment_directory=boards,
+    )
+
+    assert response.route == "game_moves"
+    assert response.processed is True
+    assert len(response.emails) == 1
+    assert response.emails[0].recipient == "black@example.com"
+    assert "1. e4" in response.emails[0].body

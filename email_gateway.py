@@ -22,6 +22,11 @@ from game_summary import (
     build_final_email_body,
     summarize_game,
 )
+from game_info_service import (
+    build_board_response,
+    build_help_response,
+    build_moves_response,
+)
 from invitation_decision_service import process_invitation_reply
 from invitation_service import (
     GAME_EMAIL_DOMAIN,
@@ -228,6 +233,85 @@ def process_incoming_email(
         )
 
     parsed_email = parse_email_body(body)
+
+    if (
+        parsed_email.valid
+        and parsed_email.command == "help"
+    ):
+        info = build_help_response(
+            game_code,
+            sender_email,
+            db_path,
+        )
+
+        return GatewayResult(
+            route="game_help",
+            processed=info.accepted,
+            game_code=game_code,
+            emails=(
+                OutgoingEmail(
+                    recipient=info.recipient,
+                    subject=info.subject,
+                    body=info.body,
+                    reply_address=recipient_email,
+                    attachment_path=info.attachment_path,
+                    delay_hours=0,
+                ),
+            ),
+        )
+
+    if (
+        parsed_email.valid
+        and parsed_email.command == "show_board"
+    ):
+        info = build_board_response(
+            game_code,
+            sender_email,
+            attachment_directory,
+            db_path,
+        )
+
+        return GatewayResult(
+            route="game_board",
+            processed=info.accepted,
+            game_code=game_code,
+            emails=(
+                OutgoingEmail(
+                    recipient=info.recipient,
+                    subject=info.subject,
+                    body=info.body,
+                    reply_address=recipient_email,
+                    attachment_path=info.attachment_path,
+                    delay_hours=0,
+                ),
+            ),
+        )
+
+    if (
+        parsed_email.valid
+        and parsed_email.command == "show_moves"
+    ):
+        info = build_moves_response(
+            game_code,
+            sender_email,
+            db_path,
+        )
+
+        return GatewayResult(
+            route="game_moves",
+            processed=info.accepted,
+            game_code=game_code,
+            emails=(
+                OutgoingEmail(
+                    recipient=info.recipient,
+                    subject=info.subject,
+                    body=info.body,
+                    reply_address=recipient_email,
+                    attachment_path=info.attachment_path,
+                    delay_hours=0,
+                ),
+            ),
+        )
 
     if (
         parsed_email.valid
