@@ -26,7 +26,7 @@ def test_legal_move_is_sent_to_opponent_with_board(tmp_path) -> None:
     assert response.delivered_to_opponent is True
     assert response.recipient == "black@example.com"
     assert response.move == "e4"
-    assert response.delay_hours is None
+    assert response.delay_hours == 0
     assert "white@example.com played e4" in response.body
 
     assert response.attachment_path is not None
@@ -209,3 +209,78 @@ def test_unknown_game_returns_to_sender(tmp_path) -> None:
     assert response.recipient == "player@example.com"
     assert response.attachment_path is None
     assert "could not be found" in response.body
+
+
+def test_game_default_delay_is_used_for_move(tmp_path) -> None:
+    database_path = tmp_path / "test.db"
+    attachment_directory = tmp_path / "boards"
+
+    game = create_game(
+        "white@example.com",
+        "black@example.com",
+        database_path,
+        delivery_delay_hours=24,
+    )
+
+    response = process_game_email(
+        game.code,
+        "white@example.com",
+        "e4",
+        database_path,
+        attachment_directory,
+    )
+
+    assert response.delivered_to_opponent is True
+    assert response.delay_hours == 24
+    assert "after 24 hours" in response.body
+
+
+def test_per_move_delay_overrides_game_default(tmp_path) -> None:
+    database_path = tmp_path / "test.db"
+    attachment_directory = tmp_path / "boards"
+
+    game = create_game(
+        "white@example.com",
+        "black@example.com",
+        database_path,
+        delivery_delay_hours=24,
+    )
+
+    response = process_game_email(
+        game.code,
+        "white@example.com",
+        """
+        e4
+
+        delay: 2h
+        """,
+        database_path,
+        attachment_directory,
+    )
+
+    assert response.delivered_to_opponent is True
+    assert response.delay_hours == 2
+    assert "after 2 hours" in response.body
+
+
+def test_immediate_game_stays_immediate(tmp_path) -> None:
+    database_path = tmp_path / "test.db"
+    attachment_directory = tmp_path / "boards"
+
+    game = create_game(
+        "white@example.com",
+        "black@example.com",
+        database_path,
+        delivery_delay_hours=0,
+    )
+
+    response = process_game_email(
+        game.code,
+        "white@example.com",
+        "e4",
+        database_path,
+        attachment_directory,
+    )
+
+    assert response.delay_hours == 0
+    assert "delivered immediately" in response.body

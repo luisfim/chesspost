@@ -70,6 +70,9 @@ def save_received_thread_context(
     received_email: ReceivedEmail,
 ) -> None:
     """Save thread information when the sender belongs to the game."""
+    if result.route == "rematch":
+        return
+
     if result.game_code is None or not received_email.message_id:
         return
 

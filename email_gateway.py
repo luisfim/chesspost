@@ -5,12 +5,21 @@ import re
 from database import DATABASE_PATH, get_game
 from email_service import (
     DEFAULT_ATTACHMENT_DIRECTORY,
+    create_board_attachment,
+    error_response,
     process_game_email,
+)
+from email_parser import parse_email_body
+from game_service import resign_game
+from game_summary import (
+    build_final_email_body,
+    summarize_game,
 )
 from invitation_decision_service import process_invitation_reply
 from invitation_service import (
     GAME_EMAIL_DOMAIN,
     process_new_game_email,
+    process_rematch_request,
 )
 
 
@@ -73,6 +82,58 @@ def extract_game_code(recipient_email: str) -> str | None:
         return None
 
     return match.group(1).lower()
+
+
+def build_finished_game_emails(
+    *,
+    game,
+    attachment_directory: Path,
+    db_path: Path,
+    delay_hours: int = 0,
+    termination_override: str | None = None,
+) -> tuple[OutgoingEmail, ...]:
+    """Prepare the final game report for both players."""
+    summary = summarize_game(
+        game,
+        db_path,
+        termination_override=termination_override,
+    )
+
+    body = build_final_email_body(
+        game,
+        summary,
+    )
+
+    short_code = game.code[:8].upper()
+    emails: list[OutgoingEmail] = []
+
+    for player_email in (
+        game.white_email,
+        game.black_email,
+    ):
+        board_path = create_board_attachment(
+            game=game,
+            recipient_email=player_email,
+            attachment_directory=attachment_directory,
+        )
+
+        emails.append(
+            OutgoingEmail(
+                recipient=player_email,
+                subject=(
+                    f"[Chesspost {short_code}] "
+                    f"Game over — {game.result}"
+                ),
+                body=body,
+                reply_address=(
+                    f"game-{game.code}@{GAME_EMAIL_DOMAIN}"
+                ),
+                attachment_path=board_path,
+                delay_hours=delay_hours,
+            )
+        )
+
+    return tuple(emails)
 
 
 def process_incoming_email(
@@ -159,6 +220,105 @@ def process_incoming_email(
             emails=outgoing_emails,
         )
 
+    parsed_email = parse_email_body(body)
+
+    if (
+        parsed_email.valid
+        and parsed_email.command == "rematch"
+    ):
+        rematch = process_rematch_request(
+            previous_game=game,
+            sender_email=sender_email,
+            db_path=db_path,
+        )
+
+        if (
+            not rematch.request_accepted
+            or rematch.game is None
+        ):
+            response = error_response(
+                sender_email,
+                game_code,
+                rematch.body,
+            )
+
+            return GatewayResult(
+                route="game_message",
+                processed=False,
+                game_code=game_code,
+                emails=(
+                    OutgoingEmail(
+                        recipient=response.recipient,
+                        subject=response.subject,
+                        body=response.body,
+                        reply_address=recipient_email,
+                        attachment_path=None,
+                        delay_hours=0,
+                    ),
+                ),
+            )
+
+        return GatewayResult(
+            route="rematch",
+            processed=True,
+            game_code=rematch.game.code,
+            emails=(
+                OutgoingEmail(
+                    recipient=rematch.recipient,
+                    subject=rematch.subject,
+                    body=rematch.body,
+                    reply_address=rematch.reply_address,
+                    attachment_path=None,
+                    delay_hours=0,
+                ),
+            ),
+        )
+
+    if (
+        parsed_email.valid
+        and parsed_email.command == "resign"
+    ):
+        resignation = resign_game(
+            game_code=game_code,
+            sender_email=sender_email,
+            db_path=db_path,
+        )
+
+        if not resignation.accepted:
+            response = error_response(
+                sender_email,
+                game_code,
+                resignation.message,
+            )
+
+            return GatewayResult(
+                route="game_message",
+                processed=False,
+                game_code=game_code,
+                emails=(
+                    OutgoingEmail(
+                        recipient=response.recipient,
+                        subject=response.subject,
+                        body=response.body,
+                        reply_address=recipient_email,
+                        attachment_path=None,
+                        delay_hours=0,
+                    ),
+                ),
+            )
+
+        return GatewayResult(
+            route="game_finished",
+            processed=True,
+            game_code=game_code,
+            emails=build_finished_game_emails(
+                game=resignation.game,
+                attachment_directory=attachment_directory,
+                db_path=db_path,
+                termination_override="Resignation",
+            ),
+        )
+
     move_response = process_game_email(
         game_code=game_code,
         sender_email=sender_email,
@@ -166,6 +326,28 @@ def process_incoming_email(
         db_path=db_path,
         attachment_directory=attachment_directory,
     )
+
+    if move_response.delivered_to_opponent:
+        updated_game = get_game(
+            game_code,
+            db_path,
+        )
+
+        if (
+            updated_game is not None
+            and updated_game.status == "finished"
+        ):
+            return GatewayResult(
+                route="game_finished",
+                processed=True,
+                game_code=game_code,
+                emails=build_finished_game_emails(
+                    game=updated_game,
+                    attachment_directory=attachment_directory,
+                    db_path=db_path,
+                    delay_hours=move_response.delay_hours or 0,
+                ),
+            )
 
     outgoing_email = OutgoingEmail(
         recipient=move_response.recipient,

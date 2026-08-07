@@ -158,12 +158,18 @@ def process_game_email(
         attachment_directory=attachment_directory,
     )
 
-    if parsed_email.delay_hours is None:
-        delivery_text = "This message should be delivered immediately."
+    delay_hours = (
+        parsed_email.delay_hours
+        if parsed_email.delay_hours is not None
+        else submission.game.delivery_delay_hours
+    )
+
+    if delay_hours == 0:
+        delivery_text = "This message will be delivered immediately."
     else:
         delivery_text = (
-            f"This message should be delivered after "
-            f"{parsed_email.delay_hours} hours."
+            f"This message will be delivered after "
+            f"{delay_hours} hours."
         )
 
     return EmailResponse(
@@ -178,5 +184,5 @@ def process_game_email(
         delivered_to_opponent=True,
         move=submission.move,
         attachment_path=attachment_path,
-        delay_hours=parsed_email.delay_hours,
+        delay_hours=delay_hours,
     )

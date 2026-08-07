@@ -141,3 +141,78 @@ def submit_move(
         game=updated_game,
         move=move_result.move,
     )
+
+
+def resign_game(
+    game_code: str,
+    sender_email: str,
+    db_path: Path = DATABASE_PATH,
+) -> SubmissionResult:
+    """End an active game by resignation."""
+    game = get_game(game_code, db_path)
+
+    if game is None:
+        raise ValueError("Game not found.")
+
+    sender_email = sender_email.strip().lower()
+
+    if sender_email not in {
+        game.white_email,
+        game.black_email,
+    }:
+        return SubmissionResult(
+            accepted=False,
+            message="This email address is not a player in this game.",
+            game=game,
+            move=None,
+        )
+
+    if game.status != "active":
+        return SubmissionResult(
+            accepted=False,
+            message="This game has already finished.",
+            game=game,
+            move=None,
+        )
+
+    result = (
+        "0-1"
+        if sender_email == game.white_email
+        else "1-0"
+    )
+
+    now = datetime.now(timezone.utc).isoformat()
+
+    with connect(db_path) as connection:
+        connection.execute(
+            """
+            UPDATE games
+            SET
+                status = 'finished',
+                result = ?,
+                updated_at = ?
+            WHERE code = ?
+            """,
+            (
+                result,
+                now,
+                game.code,
+            ),
+        )
+
+    updated_game = get_game(
+        game.code,
+        db_path,
+    )
+
+    if updated_game is None:
+        raise RuntimeError(
+            "The resigned game could not be loaded."
+        )
+
+    return SubmissionResult(
+        accepted=True,
+        message="Resignation accepted.",
+        game=updated_game,
+        move=None,
+    )
