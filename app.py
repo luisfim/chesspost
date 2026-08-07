@@ -3,6 +3,7 @@ from activity_observer import (
     record_gateway_result,
     record_received_email,
 )
+from activity_log import log_activity
 from admin_dashboard import router as admin_router
 from dataclasses import replace
 import os
@@ -352,11 +353,21 @@ async def resend_webhook(
         )
         raise
 
-    except Exception:
+    except Exception as error:
         release_inbound_email_claim(
             email_id,
             database_path(),
         )
+
+        log_activity(
+            "system_error",
+            detail=(
+                f"{type(error).__name__}: "
+                "inbound processing failed"
+            ),
+            db_path=database_path(),
+        )
+
         raise
 
 

@@ -14,6 +14,7 @@ from activity_log import (
     get_recent_activity,
     init_activity_table,
 )
+from system_health import get_system_health
 
 
 router = APIRouter()
@@ -174,6 +175,9 @@ def get_admin_snapshot() -> dict[str, object]:
                 db_path,
             )
         ],
+        "health": get_system_health(
+            db_path,
+        ),
     }
 
 
@@ -373,6 +377,44 @@ ADMIN_HTML = """
         }
     }
 
+    .health-bar {
+        display: grid;
+        grid-template-columns: repeat(6, 1fr);
+        border: 1px solid var(--line);
+        background: var(--panel);
+        margin-bottom: 20px;
+    }
+
+    .health-item {
+        min-height: 68px;
+        padding: 12px;
+        border-right: 1px solid var(--line);
+    }
+
+    .health-item:last-child {
+        border-right: 0;
+    }
+
+    .health-item span {
+        display: block;
+        margin-bottom: 8px;
+        color: var(--dim);
+        font-size: 0.68rem;
+    }
+
+    .health-item strong {
+        color: var(--white);
+        font-size: 0.82rem;
+    }
+
+    .health-good {
+        color: var(--green) !important;
+    }
+
+    .health-bad {
+        color: var(--red) !important;
+    }
+
     .stats {
         display: grid;
         grid-template-columns: repeat(5, 1fr);
@@ -482,6 +524,14 @@ ADMIN_HTML = """
     }
 
     @media (max-width: 900px) {
+        .health-bar {
+            grid-template-columns: repeat(2, 1fr);
+        }
+
+        .health-item {
+            border-bottom: 1px solid var(--line);
+        }
+
         .stats {
             grid-template-columns: repeat(2, 1fr);
         }
@@ -510,6 +560,41 @@ ADMIN_HTML = """
     </div>
 </header>
 
+<div class="health-bar">
+
+    <div class="health-item">
+        <span>DATABASE</span>
+        <strong id="health-database">...</strong>
+    </div>
+
+    <div class="health-item">
+        <span>RESEND</span>
+        <strong id="health-resend">...</strong>
+    </div>
+
+    <div class="health-item">
+        <span>EMAIL MODE</span>
+        <strong id="health-mode">...</strong>
+    </div>
+
+    <div class="health-item">
+        <span>LAST WEBHOOK</span>
+        <strong id="health-webhook">...</strong>
+    </div>
+
+    <div class="health-item">
+        <span>LAST EMAIL</span>
+        <strong id="health-email">...</strong>
+    </div>
+
+    <div class="health-item">
+        <span>UPTIME</span>
+        <strong id="health-uptime">...</strong>
+    </div>
+
+</div>
+
+
 <div class="stats">
     <div class="stat">
         <div class="label">ACTIVE</div>
@@ -536,6 +621,27 @@ ADMIN_HTML = """
         <div class="value" id="total">-</div>
     </div>
 </div>
+
+
+<section>
+    <h2>RECENT PROBLEMS</h2>
+
+    <div class="scroll">
+        <table>
+            <thead>
+                <tr>
+                    <th>TIME</th>
+                    <th>TYPE</th>
+                    <th>GAME</th>
+                    <th>ACTOR</th>
+                    <th>DETAIL</th>
+                </tr>
+            </thead>
+
+            <tbody id="problems"></tbody>
+        </table>
+    </div>
+</section>
 
 
 <section>
@@ -688,6 +794,132 @@ async function refresh() {
             document.getElementById(key).textContent =
                 data.counts[key];
         }
+
+
+        const health = data.health;
+
+        const databaseHealth =
+            document.getElementById(
+                "health-database"
+            );
+
+        databaseHealth.textContent =
+            health.database.status.toUpperCase();
+
+        databaseHealth.className =
+            health.database.status === "online"
+            ? "health-good"
+            : "health-bad";
+
+
+        const resendHealth =
+            document.getElementById(
+                "health-resend"
+            );
+
+        resendHealth.textContent =
+            health.resend.status.toUpperCase();
+
+        resendHealth.className =
+            health.resend.status === "configured"
+            ? "health-good"
+            : "health-bad";
+
+
+        document.getElementById(
+            "health-mode"
+        ).textContent =
+            health.email_mode.toUpperCase();
+
+
+        document.getElementById(
+            "health-webhook"
+        ).textContent =
+            health.last_webhook
+            ? date(health.last_webhook.time)
+            : "NONE";
+
+
+        document.getElementById(
+            "health-email"
+        ).textContent =
+            health.last_email
+            ? date(health.last_email.created_at)
+            : "NONE";
+
+
+        document.getElementById(
+            "health-uptime"
+        ).textContent =
+            health.uptime.display;
+
+
+        const problems =
+            document.getElementById(
+                "problems"
+            );
+
+        problems.innerHTML =
+            health.recent_problems.length
+            ? health.recent_problems.map(
+                problem => `
+                    <tr>
+                        <td>
+                            ${esc(
+                                date(
+                                    problem.created_at
+                                )
+                            )}
+                        </td>
+
+                        <td>
+                            ${esc(
+                                problem.event_type
+                                    .toUpperCase()
+                            )}
+                        </td>
+
+                        <td>
+                            ${
+                                problem.game_code
+                                ? esc(
+                                    problem.game_code
+                                        .slice(0, 8)
+                                        .toUpperCase()
+                                )
+                                : "-"
+                            }
+                        </td>
+
+                        <td>
+                            ${esc(
+                                short(
+                                    problem.actor_email
+                                        || "-",
+                                    24
+                                )
+                            )}
+                        </td>
+
+                        <td>
+                            ${esc(
+                                problem.detail
+                                    || "-"
+                            )}
+                        </td>
+                    </tr>
+                `
+            ).join("")
+            : `
+                <tr>
+                    <td
+                        colspan="5"
+                        class="empty"
+                    >
+                        NO RECENT PROBLEMS
+                    </td>
+                </tr>
+            `;
 
 
         const activity =

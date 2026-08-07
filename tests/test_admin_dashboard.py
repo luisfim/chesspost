@@ -253,3 +253,32 @@ def test_unknown_game_inspector_returns_404(
     )
 
     assert response.status_code == 404
+
+
+def test_admin_data_contains_system_health(
+    monkeypatch,
+    tmp_path,
+) -> None:
+    configure_admin(
+        monkeypatch,
+        tmp_path,
+    )
+
+    response = client.get(
+        "/admin/data",
+        headers=auth_headers(
+            "admin",
+            "secret-test-password",
+        ),
+    )
+
+    assert response.status_code == 200
+
+    data = response.json()
+
+    assert "health" in data
+    assert (
+        data["health"]["database"]["status"]
+        == "online"
+    )
+    assert "uptime" in data["health"]
